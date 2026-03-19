@@ -15,8 +15,9 @@ except Exception as e:
     GITHUB_TOKEN = "BRAK"
     USER_DB = {}
 
+# ZMIENIONO: Adres nowego repozytorium
 REPO_OWNER = "natpio"
-REPO_NAME = "rentownosc-transportu"
+REPO_NAME = "vortezabasepep"
 FILE_PATH = "config.json"
 
 # =========================================================
@@ -31,7 +32,7 @@ def get_base64_of_bin_file(bin_file):
         return ""
 
 def get_github_data():
-    """Pobiera plik konfiguracyjny z GitHub API."""
+    """Pobiera plik konfiguracyjny z GitHub API dla nowego repozytorium."""
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     try:
@@ -42,7 +43,7 @@ def get_github_data():
             return json.loads(decoded), content['sha']
         else:
             if st.session_state.get("authenticated"):
-                st.error(f"Błąd GitHub API: {response.status_code} - {response.text}")
+                st.error(f"Błąd GitHub API ({REPO_NAME}): {response.status_code} - {response.text}")
             return None, None
     except Exception as e:
         if st.session_state.get("authenticated"):
@@ -231,11 +232,10 @@ if check_password():
             st.rerun()
 
     if GITHUB_TOKEN == "BRAK":
-        st.error("SYSTEM HALT: GITHUB_TOKEN MISSING.")
+        st.error("SYSTEM HALT: GITHUB_TOKEN MISSING IN SECRETS.")
     else:
         config, file_sha = get_github_data()
 
-        # Renderujemy zakładki TYLKO jeśli dane zostały pobrane pomyślnie
         if config:
             tab1, tab2 = st.tabs(["📊 MARGIN ANALYZER", "⚙️ SYSTEM CORE"])
 
@@ -316,9 +316,9 @@ if check_password():
                     
                     st.markdown("### 1. Global Economic Factors")
                     e1, e2, e3 = st.columns(3)
-                    with e1: new_euro = st.number_input("EURO Rate (PLN)", value=config["EURO_RATE"], format="%.4f")
-                    with e2: new_f_pl = st.number_input("Fuel PLN/L", value=config["PRICE"]["fuelPLN"])
-                    with e3: new_f_eu = st.number_input("Fuel EUR/L", value=config["PRICE"]["fuelEUR"])
+                    with e1: new_euro = st.number_input("EURO Rate (PLN)", value=float(config["EURO_RATE"]), format="%.4f")
+                    with e2: new_f_pl = st.number_input("Fuel PLN/L", value=float(config["PRICE"]["fuelPLN"]))
+                    with e3: new_f_eu = st.number_input("Fuel EUR/L", value=float(config["PRICE"]["fuelEUR"]))
                     
                     st.write("---")
                     st.markdown("### 2. Route Management")
@@ -352,8 +352,8 @@ if check_password():
                         st.markdown(f"#### Edit Entry: {s_city} ➔ {d_city}")
                         ed1, ed2 = st.columns(2)
                         with ed1:
-                            n_pl = st.number_input("Distance PL (km)", value=v_pl)
-                            n_eu = st.number_input("Distance EU (km)", value=v_eu)
+                            n_pl = st.number_input("Distance PL (km)", value=int(v_pl))
+                            n_eu = st.number_input("Distance EU (km)", value=int(v_eu))
                         with ed2:
                             n_mftl = st.number_input("Road Tolls FTL (EURO)", value=float(v_mftl), step=0.1)
                             n_msolo = st.number_input("Road Tolls Solo (EURO)", value=float(v_msolo), step=0.1)
@@ -385,4 +385,4 @@ if check_password():
                 else:
                     st.warning("Ta sekcja jest dostępna tylko dla użytkownika o uprawnieniach 'admin'.")
         else:
-            st.error("Brak dostępu do danych konfiguracyjnych. Sprawdź poświadczenia GitHub API.")
+            st.error("Brak dostępu do danych konfiguracyjnych w nowym repozytorium. Sprawdź plik config.json i uprawnienia G_TOKEN.")
