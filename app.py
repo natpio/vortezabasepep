@@ -8,30 +8,35 @@ from datetime import datetime
 from google.oauth2.service_account import Credentials
 
 # =========================================================
-# 1. KONFIGURACJA I ZASOBY
+# 1. KONFIGURACJA I ZASOBY (PRODUKCYJNA)
 # =========================================================
 try:
-    # Pobieranie tokena bezpośrednio z secrets
+    # Pobieranie tokena bezpośrednio z secrets bez zagnieżdżania
     GITHUB_TOKEN = st.secrets["G_TOKEN"]
 except:
     GITHUB_TOKEN = None 
 
 REPO_OWNER = "natpio"
 REPO_NAME = "vortezabasepep"
+# ID Twojego nowego arkusza Google Sheets
 SHEET_ID = "1JV-vXpwAbvvboQd7eijashVmS3kkOqTf_LJrbrsWSxo"
 
 def get_github_file(file_path):
-    if not GITHUB_TOKEN: return None
+    """Pobiera surową zawartość pliku z repozytorium GitHub."""
+    if not GITHUB_TOKEN: 
+        return None
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{file_path}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     try:
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             return res.json()
-    except: pass
+    except: 
+        pass
     return None
 
 def get_remote_data():
+    """Pobiera listę kontrolną z GitHuba."""
     content = get_github_file("lista_kontrolna.json")
     if content:
         data = json.loads(base64.b64decode(content['content']).decode('utf-8'))
@@ -39,38 +44,46 @@ def get_remote_data():
     return None, None
 
 def get_bg_base64():
+    """Konwertuje obraz tła na format base64 dla CSS."""
     content = get_github_file("bg_vorteza.png")
     if content and 'content' in content:
         return content['content'].replace("\n", "").replace("\r", "")
     return ""
 
 def get_gspread_client():
+    """Autoryzacja w Google Cloud za pomocą Service Account."""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds_info = st.secrets["GCP_SERVICE_ACCOUNT"]
     credentials = Credentials.from_service_account_info(creds_info, scopes=scope)
     return gspread.authorize(credentials)
 
 def load_from_google_sheets():
+    """Ładuje wszystkie rekordy z arkusza."""
     try:
         client = get_gspread_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
         data = sheet.get_all_records()
         return pd.DataFrame(data)
-    except: return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Błąd odczytu bazy: {e}")
+        return pd.DataFrame()
 
 def save_to_google_sheets(row_data):
+    """Zapisuje nowy wiersz do arkusza."""
     try:
         client = get_gspread_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
         sheet.append_row(row_data)
         return True
-    except: return False
+    except: 
+        return False
 
 def delete_row_from_sheets(row_index):
+    """Trwale usuwa cały wiersz z bazy danych."""
     try:
         client = get_gspread_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
-        # +2: kompensacja nagłówka (1) i indeksowania od 0 (1)
+        # +2: offset dla nagłówka i indeksowania od 0
         sheet.delete_rows(row_index + 2)
         return True
     except Exception as e:
@@ -78,15 +91,16 @@ def delete_row_from_sheets(row_index):
         return False
 
 def resolve_single_fault(row_index, fault_to_remove, current_status):
+    """Aktualizuje status wpisu usuwając tylko wybraną usterkę."""
     try:
         client = get_gspread_client()
         sheet = client.open_by_key(SHEET_ID).sheet1
         
-        # Przetwarzanie tekstu usterek
+        # Logika przetwarzania tekstu statusu
         prefix = "ALERT: " if "ALERT:" in current_status else ""
         faults_content = current_status.replace("ALERT:", "").strip()
         
-        # Rozdzielenie na listę, usunięcie konkretnej pozycji i złożenie
+        # Tworzenie listy, usuwanie elementu i ponowne składanie
         fault_list = [f.strip() for f in faults_content.split(",") if f.strip()]
         if fault_to_remove in fault_list:
             fault_list.remove(fault_to_remove)
@@ -101,7 +115,7 @@ def resolve_single_fault(row_index, fault_to_remove, current_status):
         return False
 
 # =========================================================
-# 2. DESIGN VORTEZA
+# 2. INTERFEJS UŻYTKOWNIKA (DESIGN VORTEZA)
 # =========================================================
 def apply_vorteza_design():
     bg_data = get_bg_base64()
@@ -112,7 +126,7 @@ def apply_vorteza_design():
             background-size: cover !important;
             background-attachment: fixed !important;
         }}
-    """ if bg_data else ".stApp {{ background-color: #050505 !important; }}"
+    """ if bg_data else ".stApp { background-color: #050505 !important; }"
 
     st.markdown(f"""
         <style>
@@ -125,20 +139,24 @@ def apply_vorteza_design():
         .log-entry-alert {{ border-left: 8px solid #FF4B4B !important; }}
         .card-plate {{ font-family: 'Michroma', sans-serif !important; font-size: 1.4rem !important; color: #B58863 !important; }}
         input, textarea, [data-baseweb="select"] {{ background-color: rgba(255, 255, 255, 0.05) !important; color: #B58863 !important; border: 1px solid rgba(181, 136, 99, 0.3) !important; }}
+        .stButton>button {{ background-color: transparent !important; color: #B58863 !important; border: 1px solid #B58863 !important; width: 100%; transition: 0.3s; }}
+        .stButton>button:hover {{ background-color: #B58863 !important; color: black !important; }}
         #MainMenu, footer, header {{visibility: hidden;}}
         .stDeployButton {{display:none;}}
         </style>
     """, unsafe_allow_html=True)
 
 # =========================================================
-# 3. LOGIKA GŁÓWNA
+# 3. LOGIKA GŁÓWNA APLIKACJI
 # =========================================================
 st.set_page_config(page_title="VORTEZA LOGISTICS", layout="wide")
 apply_vorteza_design()
 
-if "auth" not in st.session_state: st.session_state.auth = False
+if "auth" not in st.session_state: 
+    st.session_state.auth = False
 
 if not st.session_state.auth:
+    # PANEL LOGOWANIA
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         try: st.image('logo_vorteza.png', use_container_width=True)
@@ -151,9 +169,10 @@ if not st.session_state.auth:
             if u in users and str(users[u]) == p:
                 st.session_state.auth, st.session_state.user = True, u
                 st.rerun()
-            else: st.error("Access Denied")
-
+            else: 
+                st.error("Access Denied")
 else:
+    # SPRAWDZANIE UPRAWNIEŃ (DYSPOZYTOR / ADMIN)
     is_dispatcher = any(x in st.session_state.user.lower() for x in ["dyspozytor", "admin"])
     
     with st.sidebar:
@@ -169,19 +188,22 @@ else:
                 plates = ["WSZYSTKIE"] + sorted([p for p in raw_plates if p.strip()])
                 f_plate = st.selectbox("POJAZD", plates)
                 f_alerts = st.checkbox("TYLKO ALERTY")
-            if st.button("ODŚWIEŻ DANE"): st.rerun()
+            if st.button("ODŚWIEŻ DANE"): 
+                st.rerun()
         
         if st.button("WYLOGUJ"):
             st.session_state.auth = False
             st.rerun()
 
     if is_dispatcher:
+        # WIDOK DYSPOZYTORA (COMMAND CENTER)
         st.markdown("<h2 class='vorteza-header'>COMMAND CENTER</h2>", unsafe_allow_html=True)
         
         if not df_full.empty:
             df = df_full.copy()
             df['Data i Godzina'] = pd.to_datetime(df['Data i Godzina'], errors='coerce')
             
+            # Filtrowanie danych
             if f_plate != "WSZYSTKIE":
                 df = df[df['Numer Rejestracyjny'].astype(str) == f_plate]
             if f_alerts:
@@ -194,6 +216,7 @@ else:
                 is_alert = any(word in status_raw.upper() for word in ["ALERT", "USTERK", "BRAK"])
                 entry_class = "log-entry log-entry-alert" if is_alert else "log-entry"
                 
+                # Renderowanie karty wpisu
                 st.markdown(f"""
                 <div class="{entry_class}">
                     <div style="display:flex; justify-content:space-between;">
@@ -211,12 +234,14 @@ else:
                 with col_faults:
                     if is_alert:
                         st.write("🔧 **AKTYWNE PROBLEMY (kliknij, aby usunąć):**")
+                        # Rozbijanie ciągu usterek na pojedyncze przyciski
                         clean_text = status_raw.replace("ALERT:", "").strip()
                         faults_list = [f.strip() for f in clean_text.split(",") if f.strip()]
                         
                         for f_name in faults_list:
                             if st.button(f"ZALICZONE: {f_name}", key=f"res_{idx}_{f_name}"):
                                 if resolve_single_fault(idx, f_name, status_raw):
+                                    st.success(f"Zaktualizowano: {f_name}")
                                     st.rerun()
                     else:
                         st.success("STATUS POJAZDU: NOMINAL")
@@ -226,13 +251,15 @@ else:
 
                 with col_actions:
                     st.write("⚙️ **ADMIN:**")
-                    if st.button("USUŃ CAŁY WPIS", key=f"del_row_{idx}"):
+                    if st.button("USUŃ CAŁY WPIS", key=f"del_row_{idx}", help="Trwałe usunięcie wiersza z Google Sheets"):
                         if delete_row_from_sheets(idx):
                             st.rerun()
                 st.markdown("---")
+        else:
+            st.warning("Brak danych w arkuszu.")
 
     else:
-        # WIDOK KIEROWCY
+        # WIDOK KIEROWCY (SYSTEM PROTOKOŁÓW)
         st.markdown("<h2 class='vorteza-header'>SYSTEM PROTOKOŁÓW</h2>", unsafe_allow_html=True)
         data_gh, _ = get_remote_data()
         
